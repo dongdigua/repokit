@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use actix_web::{middleware, post, web, App, HttpRequest, HttpResponse, HttpServer};
 use serde::Deserialize;
 
@@ -96,7 +98,9 @@ pub async fn webhook_new_post(
 
     let preview_html = if payload.post.cooked.len() < 2048 {
         ammonia::Builder::new()
-            .add_tags(&["img", "figure"])
+            .tags(HashSet::from([
+                "a", "b", "i", "u", "s", "strike", "em", "strong", "code", "pre",
+            ]))
             .url_relative(ammonia::UrlRelative::RewriteWithBase(
                 ammonia::Url::parse("https://bbs.aosc.io").unwrap(),
             ))
@@ -111,7 +115,7 @@ pub async fn webhook_new_post(
         .send_message(
             ctx.target,
             format!(
-                "<a href=\"https://bbs.aosc.io/t/{}\">{}</a><br/><a href=\"https://bbs.aosc.io/u/{}/summary\">{}</a><br/>{}",
+                "<a href=\"https://bbs.aosc.io/t/{}\">{}</a>\n<a href=\"https://bbs.aosc.io/u/{}/summary\">{}</a>\n{}",
                 payload.post.topic_id, &payload.post.topic_title, payload.post.user_id, payload.post.username, &preview_html,
             ),
         )
@@ -138,9 +142,12 @@ async fn run() -> std::io::Result<()> {
         target: ChatId(tg_chat_id),
     };
 
+    env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
+
     HttpServer::new(move || {
         App::new()
             .wrap(middleware::Logger::default())
+            .wrap(middleware::NormalizePath::trim())
             .app_data(web::Data::new(ctx.clone()))
             .service(webhook_flag)
             .service(webhook_new_post)
